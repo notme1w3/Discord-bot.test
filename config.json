@@ -1,0 +1,21 @@
+{
+"prefix": "!",
+"embed_color": 3447003,
+"ranks": [
+{"name":"Miembro","xp":0,"role_id":0},
+{"name":"Miembro Respetado","xp":100,"role_id":0},
+{"name":"Halconcillo","xp":250,"role_id":0},
+{"name":"Pistolero","xp":500,"role_id":0},
+{"name":"Asesino","xp":750,"role_id":0},
+{"name":"Soldado","xp":850,"role_id":0},
+{"name":"Reclutador","xp":950,"role_id":0},
+{"name":"Sicario","xp":1000,"role_id":0},
+{"name":"Chofer","xp":1300,"role_id":0},
+{"name":"Teniente","xp":1750,"role_id":0},
+{"name":"Jefe de Plaza","xp":2500,"role_id":0},
+{"name":"Comandante","xp":3000,"role_id":0},
+{"name":"Salamanca Familia","xp":3500,"role_id":0},
+{"name":"Jefe de Operaciones","xp":4500,"role_id":0},
+{"name":"Mano Derecha","xp":5500,"role_id":0}
+]
+}
