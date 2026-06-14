@@ -1,0 +1,7 @@
+services:
+
+- type: worker
+  name: el-mancho
+  runtime: python
+  buildCommand: pip install -r requirements.txt
+  startCommand: python bot.py
