@@ -19,7 +19,7 @@ help_command=None
 
 @bot.event
 async def on_ready():
-print(f"Logged in as {bot.user}")
+    print(f"Logged in as {bot.user}")
 try:
 synced = await bot.tree.sync()
 print(f"Synced {len(synced)} slash commands")
