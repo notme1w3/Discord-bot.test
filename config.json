@@ -1,21 +1,81 @@
 {
-"prefix": "!",
-"embed_color": 3447003,
-"ranks": [
-{"name":"Miembro","xp":0,"role_id":0},
-{"name":"Miembro Respetado","xp":100,"role_id":0},
-{"name":"Halconcillo","xp":250,"role_id":0},
-{"name":"Pistolero","xp":500,"role_id":0},
-{"name":"Asesino","xp":750,"role_id":0},
-{"name":"Soldado","xp":850,"role_id":0},
-{"name":"Reclutador","xp":950,"role_id":0},
-{"name":"Sicario","xp":1000,"role_id":0},
-{"name":"Chofer","xp":1300,"role_id":0},
-{"name":"Teniente","xp":1750,"role_id":0},
-{"name":"Jefe de Plaza","xp":2500,"role_id":0},
-{"name":"Comandante","xp":3000,"role_id":0},
-{"name":"Salamanca Familia","xp":3500,"role_id":0},
-{"name":"Jefe de Operaciones","xp":4500,"role_id":0},
-{"name":"Mano Derecha","xp":5500,"role_id":0}
-]
+  "prefix": "!",
+  "embed_color": 3447003,
+  "ranks": [
+    {
+      "name": "Miembro",
+      "xp": 0,
+      "role_id": 1469431899293483178
+    },
+    {
+      "name": "Miembro Respetado",
+      "xp": 100,
+      "role_id": 1476001966239911967
+    },
+    {
+      "name": "Halconcillo",
+      "xp": 250,
+      "role_id": 1469430896854695957
+    },
+    {
+      "name": "Pistolero",
+      "xp": 500,
+      "role_id": 1483262992127889480
+    },
+    {
+      "name": "Asesino",
+      "xp": 750,
+      "role_id": 1483262801580527829
+    },
+    {
+      "name": "Soldado",
+      "xp": 850,
+      "role_id": 1469430674522898453
+    },
+    {
+      "name": "Reclutador",
+      "xp": 950,
+      "role_id": 1508178548152602644
+    },
+    {
+      "name": "Sicario",
+      "xp": 1000,
+      "role_id": 1469430318393069568
+    },
+    {
+      "name": "Chofer",
+      "xp": 1300,
+      "role_id": 1469430190651211868
+    },
+    {
+      "name": "Teniente",
+      "xp": 1750,
+      "role_id": 1469429947331514543
+    },
+    {
+      "name": "Jefe de Plaza",
+      "xp": 2500,
+      "role_id": 1469429880608260209
+    },
+    {
+      "name": "Comandante",
+      "xp": 3000,
+      "role_id": 1469429807275184311
+    },
+    {
+      "name": "Salamanca Familia",
+      "xp": 3500,
+      "role_id": 1482775899232534691
+    },
+    {
+      "name": "Jefe de Operaciones",
+      "xp": 4500,
+      "role_id": 1488615871487283376
+    },
+    {
+      "name": "Mano Derecha",
+      "xp": 5500,
+      "role_id": 1515791593523773530
+    }
+  ]
 }
