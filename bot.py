@@ -21,10 +21,10 @@ help_command=None
 async def on_ready():
     print(f"Logged in as {bot.user}")
 try:
-synced = await bot.tree.sync()
-print(f"Synced {len(synced)} slash commands")
+    synced = await bot.tree.sync()
+    print(f"Synced {len(synced)} commands")
 except Exception as e:
-print(e)
+    print(f"Sync failed: {e}")
 
 @bot.command()
 async def ping(ctx):
