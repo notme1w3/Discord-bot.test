@@ -3,7 +3,7 @@ import aiosqlite
 DB = "xp.db"
 
 # =====================
-# RANK SYSTEM (YOUR LIST)
+# RANK LIST (YOUR SYSTEM)
 # =====================
 RANKS = [
     {"name": "Miembro", "xp": 100, "role_id": 0},
@@ -32,10 +32,23 @@ async def init_db():
             level INTEGER DEFAULT 0
         )
         """)
+
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS xp_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            staff_id INTEGER,
+            amount INTEGER,
+            reason TEXT,
+            action TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
         await db.commit()
 
 # =====================
-# GET USER
+# USER DATA
 # =====================
 async def get_user(user_id):
     async with aiosqlite.connect(DB) as db:
@@ -55,9 +68,7 @@ async def get_user(user_id):
 
         return row[0], row[1]
 
-# =====================
-# UPDATE USER
-# =====================
+
 async def update_user(user_id, xp, level):
     async with aiosqlite.connect(DB) as db:
         await db.execute("""
@@ -70,20 +81,20 @@ async def update_user(user_id, xp, level):
         await db.commit()
 
 # =====================
-# CORE XP ENGINE (FIXED)
+# XP ENGINE (CARRY SYSTEM)
 # =====================
 async def apply_xp(user_id, amount):
     xp, level = await get_user(user_id)
 
     xp += amount
 
-    # IMPORTANT: carry-over level system
     while level < len(RANKS) - 1 and xp >= RANKS[level]["xp"]:
         xp -= RANKS[level]["xp"]
         level += 1
 
     await update_user(user_id, xp, level)
     return xp, level
+
 
 async def remove_xp(user_id, amount):
     xp, level = await get_user(user_id)
@@ -100,7 +111,20 @@ async def remove_xp(user_id, amount):
     await update_user(user_id, xp, level)
     return xp, level
 
+# =====================
+# HISTORY LOG
+# =====================
+async def log_xp(user_id, staff_id, amount, reason, action):
+    async with aiosqlite.connect(DB) as db:
+        await db.execute("""
+        INSERT INTO xp_history (user_id, staff_id, amount, reason, action)
+        VALUES (?, ?, ?, ?, ?)
+        """, (user_id, staff_id, amount, reason, action))
+        await db.commit()
 
+# =====================
+# RANK HELPERS
+# =====================
 def get_rank(level):
     if level >= len(RANKS):
         level = len(RANKS) - 1
