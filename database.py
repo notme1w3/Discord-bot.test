@@ -2,52 +2,37 @@ import aiosqlite
 
 DB = "xp.db"
 
-
 async def init_db():
     async with aiosqlite.connect(DB) as db:
         await db.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
-            xp INTEGER DEFAULT 0,
-            rank_index INTEGER DEFAULT 0
+            xp INTEGER,
+            rank INTEGER
         )
         """)
         await db.commit()
 
-
-async def ensure(user_id):
-    async with aiosqlite.connect(DB) as db:
-        cur = await db.execute(
-            "SELECT user_id FROM users WHERE user_id=?",
-            (user_id,)
-        )
-        if not await cur.fetchone():
-            await db.execute(
-                "INSERT INTO users(user_id, xp, rank_index) VALUES(?, 0, 0)",
-                (user_id,)
-            )
-            await db.commit()
-
-
 async def get_user(user_id):
-    await ensure(user_id)
-
     async with aiosqlite.connect(DB) as db:
-        cur = await db.execute(
-            "SELECT xp, rank_index FROM users WHERE user_id=?",
-            (user_id,)
-        )
+        cur = await db.execute("SELECT xp, rank FROM users WHERE user_id=?", (user_id,))
         row = await cur.fetchone()
 
-        return row if row else (0, 0)
+        if not row:
+            await db.execute(
+                "INSERT INTO users (user_id, xp, rank) VALUES (?, ?, ?)",
+                (user_id, 0, 0)
+            )
+            await db.commit()
+            return 0, 0
 
+        return row[0], row[1]
 
-async def update_user(user_id, xp, rank_index):
-    await ensure(user_id)
-
+async def update_user(user_id, xp, rank):
     async with aiosqlite.connect(DB) as db:
-        await db.execute(
-            "UPDATE users SET xp=?, rank_index=? WHERE user_id=?",
-            (xp, rank_index, user_id)
-        )
+        await db.execute("""
+        INSERT INTO users (user_id, xp, rank)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET xp=?, rank=?
+        """, (user_id, xp, rank, xp, rank))
         await db.commit()
