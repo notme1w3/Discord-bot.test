@@ -16,7 +16,7 @@ PROMO_CHANNEL = int(os.getenv("PROMOTION_CHANNEL_ID"))
 MANAGER_ROLE = int(os.getenv("XP_MANAGER_ROLE_ID"))
 
 # =====================
-# FLASK KEEP ALIVE
+# KEEP ALIVE
 # =====================
 app = Flask("")
 
@@ -41,32 +41,29 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # =====================
 # HELPERS
 # =====================
-
 def is_manager(member):
     return any(r.id == MANAGER_ROLE for r in member.roles)
 
-def embed(title, desc):
+def make_embed(title, desc):
     return discord.Embed(title=title, description=desc, color=0x2ecc71)
 
 # =====================
-# CORE XP SYSTEM (FIXED)
+# XP SYSTEM (FULL FIXED CARRY SYSTEM)
 # =====================
-
 async def apply_xp(user_id, amount):
     xp, rank = await get_user(user_id)
 
     xp += amount
 
     while True:
-        current_rank = get_rank(rank)
+        r = get_rank(rank)
 
-        # MAX rank
-        if current_rank["xp"] is None:
+        if r["xp"] is None:
             xp = min(xp, 999999)
             break
 
-        if xp >= current_rank["xp"]:
-            xp -= current_rank["xp"]
+        if xp >= r["xp"]:
+            xp -= r["xp"]
             rank += 1
 
             if is_max(rank):
@@ -78,7 +75,6 @@ async def apply_xp(user_id, amount):
     await update_user(user_id, xp, rank)
     return xp, rank
 
-
 async def remove_xp(user_id, amount):
     xp, rank = await get_user(user_id)
 
@@ -87,6 +83,7 @@ async def remove_xp(user_id, amount):
     while xp < 0 and rank > 0:
         rank -= 1
         prev = get_rank(rank)
+
         if prev["xp"]:
             xp += prev["xp"]
         else:
@@ -98,29 +95,13 @@ async def remove_xp(user_id, amount):
     await update_user(user_id, xp, rank)
     return xp, rank
 
-
 # =====================
-# ROLE SYNC
+# EVENTS
 # =====================
-
-async def sync_roles(member, rank_index):
-    rank = get_rank(rank_index)
-    role = member.guild.get_role(rank["role_id"])
-
-    if not role:
-        return rank
-
-    try:
-        await member.remove_roles(*member.roles)
-    except:
-        pass
-
-    try:
-        await member.add_roles(role)
-    except:
-        pass
-
-    return rank
+@bot.event
+async def on_ready():
+    await init_db()
+    print(f"Logged in as {bot.user}")
 
 # =====================
 # COMMANDS
@@ -130,84 +111,94 @@ async def sync_roles(member, rank_index):
 async def ping(ctx):
     await ctx.send("🏓 Pong!")
 
+# ---------------------
+# ADD XP
+# ---------------------
 @bot.command()
 async def addxp(ctx, member: discord.Member, amount: int, *, reason="none"):
     if not is_manager(ctx.author):
         return await ctx.send("No permission")
 
     xp, rank = await apply_xp(member.id, amount)
-    rank_data = get_rank(rank)
+    r = get_rank(rank)
 
     log = bot.get_channel(LOG_CHANNEL)
     promo = bot.get_channel(PROMO_CHANNEL)
 
     await log.send(
-        f"➕ XP Added\n"
-        f"Target: {member.mention}\n"
-        f"Staff: {ctx.author.mention}\n"
-        f"Amount: {amount}\n"
-        f"Reason: {reason}"
+        f"""➕ XP LOG
+Target: {member.mention}
+Staff: {ctx.author.mention}
+Amount: {amount}
+Reason: {reason}"""
     )
 
     await promo.send(
-        embed=embed(
-            "XP Updated",
-            f"{member.mention}\n"
-            f"Rank: {rank_data['name']}\n"
-            f"XP: {xp}/{rank_data['xp'] or 'MAX'}"
+        embed=make_embed(
+            "XP UPDATED",
+            f"{member.mention}\nRank: {r['name']}\nXP: {xp}/{r['xp'] or 'MAX'}"
         )
     )
 
     await ctx.send("XP added")
 
+# ---------------------
+# REMOVE XP
+# ---------------------
 @bot.command()
 async def removexp(ctx, member: discord.Member, amount: int, *, reason="none"):
     if not is_manager(ctx.author):
         return await ctx.send("No permission")
 
     xp, rank = await remove_xp(member.id, amount)
-    rank_data = get_rank(rank)
+    r = get_rank(rank)
 
     log = bot.get_channel(LOG_CHANNEL)
 
     await log.send(
-        f"➖ XP Removed\n"
-        f"Target: {member.mention}\n"
-        f"Staff: {ctx.author.mention}\n"
-        f"Amount: {amount}\n"
-        f"Reason: {reason}"
+        f"""➖ XP LOG
+Target: {member.mention}
+Staff: {ctx.author.mention}
+Amount: {amount}
+Reason: {reason}"""
     )
 
     await ctx.send("XP removed")
 
+# ---------------------
+# RANK CARD (FIXED)
+# ---------------------
 @bot.command()
-async def setxp(ctx, member: discord.Member, amount: int):
-    if not is_manager(ctx.author):
-        return await ctx.send("No permission")
+async def rank(ctx, member: discord.Member = None):
+    member = member or ctx.author
 
-    rank = 0
-    xp = amount
+    xp, rank_index = await get_user(member.id)
+    r = get_rank(rank_index)
+    nxt = get_next(rank_index)
 
-    while True:
-        r = get_rank(rank)
-        if r["xp"] is None:
-            break
-        if xp >= r["xp"]:
-            xp -= r["xp"]
-            rank += 1
-        else:
-            break
+    needed = r["xp"] or "MAX"
 
-    await update_user(member.id, xp, rank)
-    await ctx.send("XP set")
+    percent = int((xp / r["xp"]) * 100) if r["xp"] else 100
+    bar = "█" * (percent // 10) + "░" * (10 - (percent // 10))
+
+    embed = discord.Embed(
+        title="📜 CARTEL RANK",
+        description=f"""
+👤 {member.mention}
+
+**Rank:** {r['name']}
+**XP:** {xp}/{needed}
+
+{bar} {percent}%
+
+**Next:** {nxt['name'] if nxt else "MAX"}
+""",
+        color=0x2ecc71
+    )
+
+    await ctx.send(embed=embed)
 
 # =====================
-# START
+# START BOT
 # =====================
-
-@bot.event
-async def on_ready():
-    await init_db()
-    print(f"Logged in as {bot.user}")
-
 bot.run(TOKEN)
