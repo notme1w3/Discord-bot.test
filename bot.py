@@ -5,26 +5,24 @@ from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
 
-from database import init_db, get_user, update_user
-from rank_manager import RANKS, get_rank, apply_xp
-
-# =====================
-# ENV
-# =====================
+from rank_manager import (
+    init_db,
+    apply_xp,
+    remove_xp,
+    get_rank,
+    get_next
+)
 
 load_dotenv()
 
 TOKEN = os.getenv("TOKEN")
-
-GUILD_ID = int(os.getenv("GUILD_ID"))
-PROMO_CHANNEL = int(os.getenv("PROMOTION_CHANNEL_ID"))
 LOG_CHANNEL = int(os.getenv("XP_LOG_CHANNEL_ID"))
+PROMO_CHANNEL = int(os.getenv("PROMOTION_CHANNEL_ID"))
 MANAGER_ROLE = int(os.getenv("XP_MANAGER_ROLE_ID"))
 
 # =====================
-# KEEP ALIVE (RENDER FIX)
+# FLASK KEEP ALIVE
 # =====================
-
 app = Flask("")
 
 @app.route("/")
@@ -37,9 +35,8 @@ def run():
 Thread(target=run, daemon=True).start()
 
 # =====================
-# BOT SETUP
+# BOT
 # =====================
-
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -47,43 +44,50 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-# =====================
-# HELPERS
-# =====================
-
-def is_manager(member: discord.Member):
+def is_manager(member):
     return any(r.id == MANAGER_ROLE for r in member.roles)
 
 
 def embed(title, desc):
     e = discord.Embed(title=title, description=desc, color=0x2ecc71)
-    e.set_footer(text="El Mancho")
     return e
+
+
+# =====================
+# ROLE SYNC FIXED
+# =====================
+async def sync_roles(member, level):
+    rank = get_rank(level)
+
+    role = member.guild.get_role(rank["role_id"])
+    if not role:
+        return rank
+
+    try:
+        await member.add_roles(role)
+    except:
+        pass
+
+    return rank
 
 
 # =====================
 # READY
 # =====================
-
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
     await init_db()
     await bot.tree.sync()
+    print(f"Logged in as {bot.user}")
 
 
 # =====================
-# BASIC COMMANDS
+# COMMANDS
 # =====================
-
 @bot.command()
 async def ping(ctx):
     await ctx.send("🏓 Pong!")
 
-
-# =====================
-# XP SYSTEM (FINAL FIXED)
-# =====================
 
 @bot.command()
 async def addxp(ctx, member: discord.Member, amount: int, *, reason="none"):
@@ -91,33 +95,20 @@ async def addxp(ctx, member: discord.Member, amount: int, *, reason="none"):
     if not is_manager(ctx.author):
         return await ctx.send("No permission")
 
-    xp, index = await apply_xp(get_user, update_user, member.id, amount)
-    rank = get_rank(index)
+    xp, level = await apply_xp(member.id, amount)
+    rank = await sync_roles(member, level)
 
-    log_ch = bot.get_channel(LOG_CHANNEL)
-    promo_ch = bot.get_channel(PROMO_CHANNEL)
+    log = bot.get_channel(LOG_CHANNEL)
+    promo = bot.get_channel(PROMO_CHANNEL)
 
-    # LOG CHANNEL (HISTORY SYSTEM)
-    if log_ch:
-        await log_ch.send(
-            f"➕ {ctx.author} gave {amount} XP to {member} | "
-            f"Rank: {rank[1]} | Remaining XP: {xp} | Reason: {reason}"
-        )
+    await log.send(f"➕ {member.mention} +{amount} XP by {ctx.author.mention} ({reason})")
 
-    # PROMOTION CHANNEL
-    if promo_ch:
-        next_cost = RANKS[index][0] if index < len(RANKS) else xp
+    await promo.send(embed=embed(
+        "XP Added",
+        f"{member.mention}\nRank: {rank['name']}\nXP: {xp}/{rank['xp']}"
+    ))
 
-        await promo_ch.send(
-            embed=embed(
-                "XP Added",
-                f"{member.mention}\n"
-                f"Rank: {rank[1]}\n"
-                f"XP: {xp}/{next_cost}"
-            )
-        )
-
-    await ctx.send("XP added successfully")
+    await ctx.send("XP added")
 
 
 @bot.command()
@@ -126,78 +117,33 @@ async def removexp(ctx, member: discord.Member, amount: int, *, reason="none"):
     if not is_manager(ctx.author):
         return await ctx.send("No permission")
 
-    # reverse XP logic (simple safe fallback)
-    xp, index = await get_user(member.id)
+    xp, level = await remove_xp(member.id, amount)
+    rank = await sync_roles(member, level)
 
-    xp -= amount
+    log = bot.get_channel(LOG_CHANNEL)
 
-    while index > 0 and xp < 0:
-        index -= 1
-        xp += RANKS[index][0]
+    await log.send(f"➖ {member.mention} -{amount} XP by {ctx.author.mention} ({reason})")
 
-    if xp < 0:
-        xp = 0
+    await ctx.send("XP removed")
 
-    await update_user(member.id, xp, index)
-
-    rank = get_rank(index)
-
-    log_ch = bot.get_channel(LOG_CHANNEL)
-
-    if log_ch:
-        await log_ch.send(
-            f"➖ {ctx.author} removed {amount} XP from {member} | "
-            f"Rank: {rank[1]} | Remaining XP: {xp} | Reason: {reason}"
-        )
-
-    await ctx.send("XP removed successfully")
-
-
-# =====================
-# SET XP (ADMIN RESET STYLE)
-# =====================
-
-@bot.command()
-async def setxp(ctx, member: discord.Member, amount: int):
-
-    if not is_manager(ctx.author):
-        return await ctx.send("No permission")
-
-    xp = amount
-    index = 0
-
-    while index < len(RANKS) and xp >= RANKS[index][0]:
-        xp -= RANKS[index][0]
-        index += 1
-
-    await update_user(member.id, xp, index)
-
-    await ctx.send("XP set successfully")
-
-
-# =====================
-# RANK CHECK
-# =====================
 
 @bot.command()
 async def rank(ctx, member: discord.Member = None):
-
     member = member or ctx.author
 
-    xp, index = await get_user(member.id)
-    rank = get_rank(index)
+    xp, level = await apply_xp(member.id, 0)
+    rank = get_rank(level)
+    nxt = get_next(level)
 
-    next_cost = RANKS[index][0] if index < len(RANKS) else xp
+    msg = f"{member.mention}\n{rank['name']}\nXP: {xp}/{rank['xp']}"
 
-    await ctx.send(
-        f"{member.mention}\n"
-        f"{rank[1]}\n"
-        f"XP: {xp}/{next_cost}"
-    )
+    if nxt:
+        msg += f"\nNext: {nxt['name']} ({nxt['xp']})"
+
+    await ctx.send(msg)
 
 
 # =====================
-# START
+# RUN
 # =====================
-
 bot.run(TOKEN)
