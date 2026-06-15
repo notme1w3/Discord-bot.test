@@ -12,7 +12,6 @@ async def init_db():
             rank_index INTEGER DEFAULT 0
         )
         """)
-
         await db.commit()
 
 
@@ -32,16 +31,20 @@ async def ensure(user_id):
 
 async def get_user(user_id):
     await ensure(user_id)
+
     async with aiosqlite.connect(DB) as db:
         cur = await db.execute(
             "SELECT xp, rank_index FROM users WHERE user_id=?",
             (user_id,)
         )
-        return await cur.fetchone()
+        row = await cur.fetchone()
+
+        return row if row else (0, 0)
 
 
 async def update_user(user_id, xp, rank_index):
     await ensure(user_id)
+
     async with aiosqlite.connect(DB) as db:
         await db.execute(
             "UPDATE users SET xp=?, rank_index=? WHERE user_id=?",
