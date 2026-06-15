@@ -4,110 +4,65 @@ import discord
 with open("config.json", "r", encoding="utf-8") as f:
     CONFIG = json.load(f)
 
-RANKS = sorted(CONFIG["ranks"], key=lambda x: x["xp"])
+RANKS = sorted(CONFIG["ranks"], key=lambda r: r["xp"])
 
 
-def get_rank_from_xp(xp: int):
-    current_rank = RANKS[0]
-
-    for rank in RANKS:
-        if xp >= rank["xp"]:
-            current_rank = rank
+def get_rank(xp):
+    rank = RANKS[0]
+    for r in RANKS:
+        if xp >= r["xp"]:
+            rank = r
         else:
             break
+    return rank
 
-    return current_rank
 
-
-def get_next_rank(xp: int):
-    for rank in RANKS:
-        if rank["xp"] > xp:
-            return rank
-
+def get_next(xp):
+    for r in RANKS:
+        if r["xp"] > xp:
+            return r
     return None
 
 
-def get_progress(xp: int):
+def progress(xp):
+    current = get_rank(xp)
+    nxt = get_next(xp)
 
-    current_rank = get_rank_from_xp(xp)
-    next_rank = get_next_rank(xp)
+    if not nxt:
+        return 100, current, None, 0
 
-    if next_rank is None:
-        return {
-            "percent": 100,
-            "current": current_rank,
-            "next": None,
-            "needed": 0
-        }
+    total = nxt["xp"] - current["xp"]
+    done = xp - current["xp"]
 
-    current_xp = current_rank["xp"]
-    next_xp = next_rank["xp"]
-
-    progress = xp - current_xp
-    total = next_xp - current_xp
-
-    percent = int((progress / total) * 100)
-
-    return {
-        "percent": percent,
-        "current": current_rank,
-        "next": next_rank,
-        "needed": next_xp - xp
-    }
+    pct = int((done / total) * 100)
+    return pct, current, nxt, nxt["xp"] - xp
 
 
-def create_progress_bar(percent):
-
-    filled = round(percent / 10)
-
-    return (
-        "█" * filled +
-        "░" * (10 - filled)
-    )
+def bar(pct):
+    filled = pct // 10
+    return "█" * filled + "░" * (10 - filled)
 
 
-async def sync_member_rank(
-    member: discord.Member,
-    xp: int
-):
-
+async def sync(member: discord.Member, xp: int):
     guild = member.guild
+    target = get_rank(xp)
+    role = guild.get_role(target["role_id"])
 
-    target_rank = get_rank_from_xp(xp)
-
-    target_role = guild.get_role(
-        target_rank["role_id"]
-    )
-
-    if target_role is None:
+    if not role:
         return None
 
-    rank_role_ids = [
-        rank["role_id"]
-        for rank in RANKS
+    all_ids = [r["role_id"] for r in RANKS]
+
+    to_remove = [
+        r for r in member.roles
+        if r.id in all_ids and r.id != role.id
     ]
 
-    roles_to_remove = [
-        role
-        for role in member.roles
-        if role.id in rank_role_ids
-        and role.id != target_role.id
-    ]
+    if to_remove:
+        await member.remove_roles(*to_remove)
 
-    if roles_to_remove:
-
-        await member.remove_roles(
-            *roles_to_remove,
-            reason="Rank synchronization"
-        )
-
-    if target_role not in member.roles:
-
-        await member.add_roles(
-            target_role,
-            reason="XP Promotion"
-        )
-
-        return target_rank
+    if role not in member.roles:
+        await member.add_roles(role)
+        return target
 
     return None
