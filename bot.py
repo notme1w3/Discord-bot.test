@@ -13,10 +13,12 @@ from database import (
 
 from rank_manager import (
     RANKS,
-    get_rank,
-    get_next
+    get_rank
 )
 
+# =====================
+# LOAD ENV
+# =====================
 load_dotenv()
 
 TOKEN = os.getenv("TOKEN")
@@ -40,7 +42,7 @@ def run():
 Thread(target=run, daemon=True).start()
 
 # =====================
-# DISCORD BOT
+# BOT SETUP
 # =====================
 intents = discord.Intents.default()
 intents.message_content = True
@@ -49,6 +51,9 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
+# =====================
+# HELPERS
+# =====================
 def is_manager(member):
     return any(r.id == MANAGER_ROLE for r in member.roles)
 
@@ -60,25 +65,23 @@ def embed(title, desc):
 
 
 # =====================
-# XP LOGIC (RESET SYSTEM)
+# XP SYSTEM (RESET PER RANK)
 # =====================
-
 async def add_progress(user_id, amount):
     xp, index = await get_user(user_id)
 
     xp += amount
 
-    # LEVEL UP LOOP (important)
     while xp >= 100:
         xp -= 100
         index += 1
 
         if index >= len(RANKS):
             index = len(RANKS) - 1
-            xp = 100  # maxed out
+            xp = 100
+            break
 
     await update_user(user_id, xp, index)
-
     return xp, index
 
 
@@ -95,7 +98,6 @@ async def remove_progress(user_id, amount):
         xp = 0
 
     await update_user(user_id, xp, index)
-
     return xp, index
 
 
@@ -126,7 +128,6 @@ async def sync_roles(member, index):
 # =====================
 # EVENTS
 # =====================
-
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
@@ -152,19 +153,22 @@ async def addxp(ctx, member: discord.Member, amount: int, *, reason="none"):
     xp, index = await add_progress(member.id, amount)
     rank = await sync_roles(member, index)
 
-    log_ch = bot.get_channel(LOG_CHANNEL)
-    promo_ch = bot.get_channel(PROMO_CHANNEL)
+    try:
+        log_ch = await bot.fetch_channel(LOG_CHANNEL)
+        promo_ch = await bot.fetch_channel(PROMO_CHANNEL)
 
-    await log_ch.send(
-        f"➕ {ctx.author.mention} gave {amount} XP to {member.mention} ({reason})"
-    )
-
-    await promo_ch.send(
-        embed=embed(
-            "XP Added",
-            f"{member.mention}\nRank: {rank['name']}\nXP: {xp}/100"
+        await log_ch.send(
+            f"➕ {ctx.author.mention} gave {amount} XP to {member.mention} ({reason})"
         )
-    )
+
+        await promo_ch.send(
+            embed=embed(
+                "XP Added",
+                f"{member.mention}\nRank: {rank['name']}\nXP: {xp}/100"
+            )
+        )
+    except Exception:
+        pass
 
     await ctx.send("XP added")
 
@@ -176,13 +180,16 @@ async def removexp(ctx, member: discord.Member, amount: int, *, reason="none"):
         return await ctx.send("No permission")
 
     xp, index = await remove_progress(member.id, amount)
-    rank = await sync_roles(member, index)
+    await sync_roles(member, index)
 
-    log_ch = bot.get_channel(LOG_CHANNEL)
+    try:
+        log_ch = await bot.fetch_channel(LOG_CHANNEL)
 
-    await log_ch.send(
-        f"➖ {ctx.author.mention} removed {amount} XP from {member.mention} ({reason})"
-    )
+        await log_ch.send(
+            f"➖ {ctx.author.mention} removed {amount} XP from {member.mention} ({reason})"
+        )
+    except Exception:
+        pass
 
     await ctx.send("XP removed")
 
@@ -193,14 +200,13 @@ async def setxp(ctx, member: discord.Member, amount: int):
     if not is_manager(ctx.author):
         return await ctx.send("No permission")
 
-    # RESET STYLE SET
     index = 0
+
     while amount >= 100:
         amount -= 100
         index += 1
 
     await update_user(member.id, amount, index)
-
     await sync_roles(member, index)
 
     await ctx.send("XP set")
@@ -209,5 +215,4 @@ async def setxp(ctx, member: discord.Member, amount: int):
 # =====================
 # START
 # =====================
-
 bot.run(TOKEN)
