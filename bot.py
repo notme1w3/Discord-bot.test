@@ -4,17 +4,9 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
-import aiosqlite
 
-from rank_manager import (
-    init_db,
-    apply_xp,
-    remove_xp,
-    get_rank,
-    get_next,
-    log_xp,
-    DB
-)
+from database import init_db, get_user, update_user
+from rank_manager import RANKS, get_rank, get_next, is_max
 
 load_dotenv()
 
@@ -32,7 +24,10 @@ app = Flask("")
 def home():
     return "El Mancho online"
 
-Thread(target=lambda: app.run(host="0.0.0.0", port=10000), daemon=True).start()
+def run():
+    app.run(host="0.0.0.0", port=10000)
+
+Thread(target=run, daemon=True).start()
 
 # =====================
 # BOT SETUP
@@ -43,148 +38,176 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# =====================
+# HELPERS
+# =====================
 
 def is_manager(member):
     return any(r.id == MANAGER_ROLE for r in member.roles)
 
+def embed(title, desc):
+    return discord.Embed(title=title, description=desc, color=0x2ecc71)
 
 # =====================
-# READY
+# CORE XP SYSTEM (FIXED)
 # =====================
-@bot.event
-async def on_ready():
-    await init_db()
-    await bot.tree.sync()
-    print(f"Logged in as {bot.user}")
+
+async def apply_xp(user_id, amount):
+    xp, rank = await get_user(user_id)
+
+    xp += amount
+
+    while True:
+        current_rank = get_rank(rank)
+
+        # MAX rank
+        if current_rank["xp"] is None:
+            xp = min(xp, 999999)
+            break
+
+        if xp >= current_rank["xp"]:
+            xp -= current_rank["xp"]
+            rank += 1
+
+            if is_max(rank):
+                xp = 0
+                break
+        else:
+            break
+
+    await update_user(user_id, xp, rank)
+    return xp, rank
+
+
+async def remove_xp(user_id, amount):
+    xp, rank = await get_user(user_id)
+
+    xp -= amount
+
+    while xp < 0 and rank > 0:
+        rank -= 1
+        prev = get_rank(rank)
+        if prev["xp"]:
+            xp += prev["xp"]
+        else:
+            xp = 0
+
+    if xp < 0:
+        xp = 0
+
+    await update_user(user_id, xp, rank)
+    return xp, rank
 
 
 # =====================
-# ADD XP
+# ROLE SYNC
 # =====================
+
+async def sync_roles(member, rank_index):
+    rank = get_rank(rank_index)
+    role = member.guild.get_role(rank["role_id"])
+
+    if not role:
+        return rank
+
+    try:
+        await member.remove_roles(*member.roles)
+    except:
+        pass
+
+    try:
+        await member.add_roles(role)
+    except:
+        pass
+
+    return rank
+
+# =====================
+# COMMANDS
+# =====================
+
+@bot.command()
+async def ping(ctx):
+    await ctx.send("🏓 Pong!")
+
 @bot.command()
 async def addxp(ctx, member: discord.Member, amount: int, *, reason="none"):
-
     if not is_manager(ctx.author):
         return await ctx.send("No permission")
 
-    xp, level = await apply_xp(member.id, amount)
-    rank = get_rank(level)
-
-    await log_xp(member.id, ctx.author.id, amount, reason, "add")
+    xp, rank = await apply_xp(member.id, amount)
+    rank_data = get_rank(rank)
 
     log = bot.get_channel(LOG_CHANNEL)
     promo = bot.get_channel(PROMO_CHANNEL)
 
-    await log.send(f"➕ {member.mention} +{amount} XP by {ctx.author.mention} ({reason})")
+    await log.send(
+        f"➕ XP Added\n"
+        f"Target: {member.mention}\n"
+        f"Staff: {ctx.author.mention}\n"
+        f"Amount: {amount}\n"
+        f"Reason: {reason}"
+    )
 
     await promo.send(
-        embed=discord.Embed(
-            title="XP Added",
-            description=f"{member.mention}\nRank: {rank['name']}\nXP: {xp}/{rank['xp']}",
-            color=0x2ecc71
+        embed=embed(
+            "XP Updated",
+            f"{member.mention}\n"
+            f"Rank: {rank_data['name']}\n"
+            f"XP: {xp}/{rank_data['xp'] or 'MAX'}"
         )
     )
 
     await ctx.send("XP added")
 
-
-# =====================
-# REMOVE XP
-# =====================
 @bot.command()
 async def removexp(ctx, member: discord.Member, amount: int, *, reason="none"):
-
     if not is_manager(ctx.author):
         return await ctx.send("No permission")
 
-    xp, level = await remove_xp(member.id, amount)
-    rank = get_rank(level)
-
-    await log_xp(member.id, ctx.author.id, amount, reason, "remove")
+    xp, rank = await remove_xp(member.id, amount)
+    rank_data = get_rank(rank)
 
     log = bot.get_channel(LOG_CHANNEL)
 
-    await log.send(f"➖ {member.mention} -{amount} XP by {ctx.author.mention} ({reason})")
+    await log.send(
+        f"➖ XP Removed\n"
+        f"Target: {member.mention}\n"
+        f"Staff: {ctx.author.mention}\n"
+        f"Amount: {amount}\n"
+        f"Reason: {reason}"
+    )
 
     await ctx.send("XP removed")
 
-
-# =====================
-# RANK COMMAND (UI)
-# =====================
 @bot.command()
-async def rank(ctx, member: discord.Member = None):
-    member = member or ctx.author
+async def setxp(ctx, member: discord.Member, amount: int):
+    if not is_manager(ctx.author):
+        return await ctx.send("No permission")
 
-    xp, level = await apply_xp(member.id, 0)
-    rank = get_rank(level)
-    nxt = get_next(level)
+    rank = 0
+    xp = amount
 
-    needed = rank["xp"]
-    percent = int((xp / needed) * 100) if needed else 100
+    while True:
+        r = get_rank(rank)
+        if r["xp"] is None:
+            break
+        if xp >= r["xp"]:
+            xp -= r["xp"]
+            rank += 1
+        else:
+            break
 
-    bar = "█" * (percent // 10) + "░" * (10 - (percent // 10))
-
-    async with aiosqlite.connect(DB) as db:
-        async with db.execute("""
-            SELECT action, staff_id, amount, reason
-            FROM xp_history
-            WHERE user_id=?
-            ORDER BY id DESC
-            LIMIT 1
-        """, (member.id,)) as cur:
-            last = await cur.fetchone()
-
-    history = "No history yet"
-
-    if last:
-        action, staff, amount, reason = last
-        emoji = "➕" if action == "add" else "➖"
-
-        history = f"""
-{emoji} {action}
-👤 Target: {member.mention}
-👮 Staff: <@{staff}>
-💰 Amount: {amount}
-📝 Reason: {reason}
-"""
-
-    await ctx.send(f"""
-**Rank:** {rank['name']}
-**XP:** {xp}/{needed}
-
-{bar} {percent}%
-
-**Next:** {nxt['name'] if nxt else "MAX"}
-**Needed:** {nxt['xp'] if nxt else "MAX"}
-
-📜 XP HISTORY LOG
-{history}
-""")
-
+    await update_user(member.id, xp, rank)
+    await ctx.send("XP set")
 
 # =====================
-# LEADERBOARD
+# START
 # =====================
-@bot.command()
-async def leaderboard(ctx):
-    async with aiosqlite.connect(DB) as db:
-        async with db.execute("""
-            SELECT user_id, xp, level FROM users
-            ORDER BY level DESC, xp DESC
-            LIMIT 10
-        """) as cur:
-            rows = await cur.fetchall()
 
-    msg = "**🏆 LEADERBOARD**\n\n"
+@bot.event
+async def on_ready():
+    await init_db()
+    print(f"Logged in as {bot.user}")
 
-    for i, (uid, xp, lvl) in enumerate(rows, 1):
-        msg += f"{i}. <@{uid}> - Level {lvl} ({xp} XP)\n"
-
-    await ctx.send(msg)
-
-
-# =====================
-# RUN
-# =====================
 bot.run(TOKEN)
