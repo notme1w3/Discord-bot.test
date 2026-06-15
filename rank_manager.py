@@ -1,3 +1,5 @@
+# rank_manager.py
+
 RANKS = [
     {"name": "Miembro", "xp": 100},
     {"name": "Miembro Respetado", "xp": 250},
@@ -13,16 +15,16 @@ RANKS = [
     {"name": "Comandante", "xp": 3500},
     {"name": "Salamanca Familia", "xp": 4500},
     {"name": "Jefe de Operaciones", "xp": 5500},
-    {"name": "Mano Derecha", "xp": None},
+    {"name": "Mano Derecha", "xp": None},  # MAX
 ]
 
-def get_rank(index):
+def get_rank(index: int):
     return RANKS[index]
 
-def get_next(index):
+def get_next(index: int):
     if index + 1 >= len(RANKS):
         return None
     return RANKS[index + 1]
 
-def max_rank(index):
+def is_max(index: int):
     return index >= len(RANKS) - 1
