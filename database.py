@@ -15,13 +15,16 @@ async def init_db():
 
 async def get_user(user_id):
     async with aiosqlite.connect(DB) as db:
-        cur = await db.execute("SELECT xp, rank FROM users WHERE user_id=?", (user_id,))
+        cur = await db.execute(
+            "SELECT xp, rank FROM users WHERE user_id=?",
+            (user_id,)
+        )
         row = await cur.fetchone()
 
         if not row:
             await db.execute(
-                "INSERT INTO users (user_id, xp, rank) VALUES (?, ?, ?)",
-                (user_id, 0, 0)
+                "INSERT INTO users (user_id, xp, rank) VALUES (?, 0, 0)",
+                (user_id,)
             )
             await db.commit()
             return 0, 0
