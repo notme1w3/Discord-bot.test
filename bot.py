@@ -6,7 +6,7 @@ from flask import Flask
 from threading import Thread
 
 from database import init_db, get_user, update_user
-from rank_manager import RANKS, get_rank
+from rank_manager import RANKS
 
 # =====================
 # ENV
@@ -19,7 +19,7 @@ PROMO_CHANNEL = int(os.getenv("PROMOTION_CHANNEL_ID"))
 MANAGER_ROLE = int(os.getenv("XP_MANAGER_ROLE_ID"))
 
 # =====================
-# FLASK KEEP ALIVE
+# KEEP ALIVE FLASK
 # =====================
 app = Flask("")
 
@@ -49,31 +49,25 @@ def is_manager(member):
     return any(r.id == MANAGER_ROLE for r in member.roles)
 
 
-def make_embed(title, desc):
+def embed(title, desc):
     e = discord.Embed(title=title, description=desc, color=0x2ecc71)
     e.set_footer(text="El Mancho")
     return e
 
 
 # =====================
-# XP CORE SYSTEM (CARRY OVER)
+# XP SYSTEM (CARRY OVER FIXED)
 # =====================
-async def process_xp(user_id, gained):
+async def add_xp(user_id, amount):
     xp, rank_index = await get_user(user_id)
 
-    xp += gained
+    xp += amount
 
-    while True:
-        req, _ = RANKS[rank_index]
+    while rank_index < len(RANKS) - 1:
+        required_xp, _ = RANKS[rank_index + 1]
 
-        if xp >= req:
-            xp -= req
+        if xp >= required_xp:
             rank_index += 1
-
-            if rank_index >= len(RANKS):
-                rank_index = len(RANKS) - 1
-                xp = 0
-                break
         else:
             break
 
@@ -105,13 +99,11 @@ async def sync_roles(member, rank_index):
     _, role_id = RANKS[rank_index]
     role = member.guild.get_role(role_id)
 
-    if not role:
-        return
-
-    try:
-        await member.add_roles(role)
-    except:
-        pass
+    if role:
+        try:
+            await member.add_roles(role)
+        except:
+            pass
 
 
 # =====================
@@ -133,43 +125,28 @@ async def ping(ctx):
     await ctx.send("🏓 Pong!")
 
 
-# =====================
-# ADD XP
-# =====================
 @bot.command()
 async def addxp(ctx, member: discord.Member, amount: int, *, reason="none"):
 
     if not is_manager(ctx.author):
         return await ctx.send("No permission")
 
-    xp, rank_index = await process_xp(member.id, amount)
+    xp, rank_index = await add_xp(member.id, amount)
     await sync_roles(member, rank_index)
 
-    try:
-        log = await bot.fetch_channel(LOG_CHANNEL)
-        promo = await bot.fetch_channel(PROMO_CHANNEL)
+    log = bot.get_channel(LOG_CHANNEL)
+    promo = bot.get_channel(PROMO_CHANNEL)
 
+    if log:
+        await log.send(f"➕ {member.mention} +{amount} XP | by {ctx.author.mention} | {reason}")
+
+    if promo:
         req, name = RANKS[rank_index]
-
-        await log.send(
-            f"📜 XP LOG\n➕ {member.mention} +{amount} XP\n👮 {ctx.author.mention}\n📝 {reason}"
-        )
-
-        await promo.send(
-            embed=make_embed(
-                "Rank Update",
-                f"{member.mention}\nRank: {name}\nXP: {xp}/{req}"
-            )
-        )
-    except:
-        pass
+        await promo.send(embed=embed("Rank Update", f"{member.mention}\n{name}\nXP: {xp}/{req}"))
 
     await ctx.send("XP added")
 
 
-# =====================
-# REMOVE XP
-# =====================
 @bot.command()
 async def removexp(ctx, member: discord.Member, amount: int, *, reason="none"):
 
@@ -179,21 +156,14 @@ async def removexp(ctx, member: discord.Member, amount: int, *, reason="none"):
     xp, rank_index = await remove_xp(member.id, amount)
     await sync_roles(member, rank_index)
 
-    try:
-        log = await bot.fetch_channel(LOG_CHANNEL)
+    log = bot.get_channel(LOG_CHANNEL)
 
-        await log.send(
-            f"📜 XP LOG\n➖ {member.mention} -{amount} XP\n👮 {ctx.author.mention}\n📝 {reason}"
-        )
-    except:
-        pass
+    if log:
+        await log.send(f"➖ {member.mention} -{amount} XP | by {ctx.author.mention} | {reason}")
 
     await ctx.send("XP removed")
 
 
-# =====================
-# SET XP
-# =====================
 @bot.command()
 async def setxp(ctx, member: discord.Member, amount: int):
 
@@ -202,7 +172,7 @@ async def setxp(ctx, member: discord.Member, amount: int):
 
     rank_index = 0
 
-    while rank_index < len(RANKS) - 1 and amount >= RANKS[rank_index][0]:
+    while rank_index < len(RANKS) - 1 and amount >= RANKS[rank_index + 1][0]:
         rank_index += 1
 
     await update_user(member.id, amount, rank_index)
@@ -211,9 +181,6 @@ async def setxp(ctx, member: discord.Member, amount: int):
     await ctx.send("XP set")
 
 
-# =====================
-# RANK CHECK
-# =====================
 @bot.command()
 async def rank(ctx, member: discord.Member = None):
 
@@ -222,17 +189,9 @@ async def rank(ctx, member: discord.Member = None):
 
     req, name = RANKS[rank_index]
 
-    await ctx.send(
-        embed=make_embed(
-            member.display_name,
-            f"Rank: {name}\nXP: {xp}/{req}"
-        )
-    )
+    await ctx.send(embed=embed("Rank", f"{member.mention}\n{name}\nXP: {xp}/{req}"))
 
 
-# =====================
-# LEADERBOARD
-# =====================
 @bot.command()
 async def leaderboard(ctx):
     import aiosqlite
@@ -256,7 +215,7 @@ async def leaderboard(ctx):
         except:
             pass
 
-    await ctx.send(embed=make_embed("Leaderboard", text))
+    await ctx.send(embed=embed("Leaderboard", text))
 
 
 # =====================
