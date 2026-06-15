@@ -4,58 +4,31 @@ import discord
 with open("config.json", "r", encoding="utf-8") as f:
     CONFIG = json.load(f)
 
-RANKS = sorted(CONFIG["ranks"], key=lambda r: r["xp"])
+RANKS = CONFIG["ranks"]
 
 
-def get_rank(xp):
-    rank = RANKS[0]
-    for r in RANKS:
-        if xp >= r["xp"]:
-            rank = r
-        else:
-            break
-    return rank
+def get_rank(index):
+    return RANKS[index]
 
 
-def get_next(xp):
-    for r in RANKS:
-        if r["xp"] > xp:
-            return r
-    return None
-
-
-def progress(xp):
-    current = get_rank(xp)
-    nxt = get_next(xp)
-
-    if not nxt:
-        return 100, current, None, 0
-
-    total = nxt["xp"] - current["xp"]
-    done = xp - current["xp"]
-
-    pct = int((done / total) * 100)
-    return pct, current, nxt, nxt["xp"] - xp
-
-
-def bar(pct):
-    filled = pct // 10
-    return "█" * filled + "░" * (10 - filled)
-
-
-async def sync(member: discord.Member, xp: int):
-    guild = member.guild
-    target = get_rank(xp)
-    role = guild.get_role(target["role_id"])
-
-    if not role:
+def get_next(index):
+    if index + 1 >= len(RANKS):
         return None
+    return RANKS[index + 1]
 
-    all_ids = [r["role_id"] for r in RANKS]
+
+async def sync(member: discord.Member, user_data):
+    xp, index = user_data
+
+    rank = get_rank(index)
+    role = member.guild.get_role(rank["role_id"])
+
+    # remove old rank roles
+    all_roles = [r["role_id"] for r in RANKS]
 
     to_remove = [
         r for r in member.roles
-        if r.id in all_ids and r.id != role.id
+        if r.id in all_roles
     ]
 
     if to_remove:
@@ -63,6 +36,10 @@ async def sync(member: discord.Member, xp: int):
 
     if role not in member.roles:
         await member.add_roles(role)
-        return target
 
-    return None
+    return rank
+
+
+def can_level_up(xp, index):
+    # each rank uses fixed threshold (you can adjust)
+    return xp >= 100
