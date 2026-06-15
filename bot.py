@@ -6,13 +6,7 @@ from flask import Flask
 from threading import Thread
 
 from database import init_db, get_user, update_user
-
-from rank_manager import (
-    RANKS,
-    get_rank,
-    sync_progress,
-    remove_progress
-)
+from rank_manager import RANKS, get_rank, apply_xp
 
 # =====================
 # ENV
@@ -28,7 +22,7 @@ LOG_CHANNEL = int(os.getenv("XP_LOG_CHANNEL_ID"))
 MANAGER_ROLE = int(os.getenv("XP_MANAGER_ROLE_ID"))
 
 # =====================
-# FLASK KEEP ALIVE (RENDER FIX)
+# KEEP ALIVE (RENDER FIX)
 # =====================
 
 app = Flask("")
@@ -43,7 +37,7 @@ def run():
 Thread(target=run, daemon=True).start()
 
 # =====================
-# DISCORD BOT
+# BOT SETUP
 # =====================
 
 intents = discord.Intents.default()
@@ -68,7 +62,7 @@ def embed(title, desc):
 
 
 # =====================
-# READY EVENT
+# READY
 # =====================
 
 @bot.event
@@ -79,7 +73,7 @@ async def on_ready():
 
 
 # =====================
-# COMMANDS
+# BASIC COMMANDS
 # =====================
 
 @bot.command()
@@ -88,7 +82,7 @@ async def ping(ctx):
 
 
 # =====================
-# XP SYSTEM (FIXED)
+# XP SYSTEM (FINAL FIXED)
 # =====================
 
 @bot.command()
@@ -97,30 +91,33 @@ async def addxp(ctx, member: discord.Member, amount: int, *, reason="none"):
     if not is_manager(ctx.author):
         return await ctx.send("No permission")
 
-    xp, index = await sync_progress(get_user, update_user, member.id, amount)
+    xp, index = await apply_xp(get_user, update_user, member.id, amount)
     rank = get_rank(index)
 
     log_ch = bot.get_channel(LOG_CHANNEL)
     promo_ch = bot.get_channel(PROMO_CHANNEL)
 
+    # LOG CHANNEL (HISTORY SYSTEM)
     if log_ch:
         await log_ch.send(
-            f"➕ {ctx.author} gave {amount} XP to {member} | {rank['name']} ({xp}) | {reason}"
+            f"➕ {ctx.author} gave {amount} XP to {member} | "
+            f"Rank: {rank[1]} | Remaining XP: {xp} | Reason: {reason}"
         )
 
+    # PROMOTION CHANNEL
     if promo_ch:
-        next_req = RANKS[index + 1][0] if index + 1 < len(RANKS) else xp
+        next_cost = RANKS[index][0] if index < len(RANKS) else xp
 
         await promo_ch.send(
             embed=embed(
                 "XP Added",
                 f"{member.mention}\n"
-                f"Rank: {rank['name']}\n"
-                f"XP: {xp}/{next_req}"
+                f"Rank: {rank[1]}\n"
+                f"XP: {xp}/{next_cost}"
             )
         )
 
-    await ctx.send("XP added")
+    await ctx.send("XP added successfully")
 
 
 @bot.command()
@@ -129,18 +126,36 @@ async def removexp(ctx, member: discord.Member, amount: int, *, reason="none"):
     if not is_manager(ctx.author):
         return await ctx.send("No permission")
 
-    xp, index = await remove_progress(get_user, update_user, member.id, amount)
+    # reverse XP logic (simple safe fallback)
+    xp, index = await get_user(member.id)
+
+    xp -= amount
+
+    while index > 0 and xp < 0:
+        index -= 1
+        xp += RANKS[index][0]
+
+    if xp < 0:
+        xp = 0
+
+    await update_user(member.id, xp, index)
+
     rank = get_rank(index)
 
     log_ch = bot.get_channel(LOG_CHANNEL)
 
     if log_ch:
         await log_ch.send(
-            f"➖ {ctx.author} removed {amount} XP from {member} | {rank['name']} ({xp}) | {reason}"
+            f"➖ {ctx.author} removed {amount} XP from {member} | "
+            f"Rank: {rank[1]} | Remaining XP: {xp} | Reason: {reason}"
         )
 
-    await ctx.send("XP removed")
+    await ctx.send("XP removed successfully")
 
+
+# =====================
+# SET XP (ADMIN RESET STYLE)
+# =====================
 
 @bot.command()
 async def setxp(ctx, member: discord.Member, amount: int):
@@ -148,20 +163,20 @@ async def setxp(ctx, member: discord.Member, amount: int):
     if not is_manager(ctx.author):
         return await ctx.send("No permission")
 
-    # manual reset style
-    from rank_manager import RANKS
-
+    xp = amount
     index = 0
-    while index < len(RANKS) - 1 and amount >= RANKS[index + 1][0]:
+
+    while index < len(RANKS) and xp >= RANKS[index][0]:
+        xp -= RANKS[index][0]
         index += 1
 
-    await update_user(member.id, amount, index)
+    await update_user(member.id, xp, index)
 
-    await ctx.send("XP set")
+    await ctx.send("XP set successfully")
 
 
 # =====================
-# OPTIONAL: DEBUG COMMAND
+# RANK CHECK
 # =====================
 
 @bot.command()
@@ -172,17 +187,17 @@ async def rank(ctx, member: discord.Member = None):
     xp, index = await get_user(member.id)
     rank = get_rank(index)
 
-    next_req = RANKS[index + 1][0] if index + 1 < len(RANKS) else xp
+    next_cost = RANKS[index][0] if index < len(RANKS) else xp
 
     await ctx.send(
         f"{member.mention}\n"
-        f"{rank['name']}\n"
-        f"XP: {xp}/{next_req}"
+        f"{rank[1]}\n"
+        f"XP: {xp}/{next_cost}"
     )
 
 
 # =====================
-# START BOT
+# START
 # =====================
 
 bot.run(TOKEN)
